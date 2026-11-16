@@ -1,0 +1,10 @@
+{
+  "layout:ja": {
+    "f2": "ja-tabs.rename_tab",
+    "shift-f2": "ja-tabs.rename_space",
+    "cmd-w": "ja-tabs.close_tab",
+    "cmd-p": "mod.open:ja-picker",
+    "cmd-/": "mod.open:ja-help",
+    "cmd-shift-/": "mod.open:ja-help"
+  }
+}

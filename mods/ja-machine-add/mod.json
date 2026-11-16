@@ -1,0 +1,12 @@
+{
+  "place": "none",
+  "title": "マシンを追加",
+  "overlay": {
+    "kind": "dialog",
+    "width": 560
+  },
+  "cloned_from": {
+    "name": "machine-add",
+    "version": "0.1.15"
+  }
+}

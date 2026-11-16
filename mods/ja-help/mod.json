@@ -1,0 +1,13 @@
+{
+  "place": "none",
+  "cloned_from": {
+    "name": "help",
+    "version": "0.1.15"
+  },
+  "title": "キー操作",
+  "overlay": {
+    "kind": "dialog",
+    "width": 620,
+    "height": 0.8
+  }
+}
