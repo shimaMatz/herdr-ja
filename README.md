@@ -1,5 +1,7 @@
 # herdr-ja
 
+English | [日本語](README.ja.md)
+
 A Japanese layout for [herdr-app](https://herdr.dev) built around git worktrees.
 - Every label, menu, dialog and toast is in Japanese.
 - Each space lists its repo's worktrees.
