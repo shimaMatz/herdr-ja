@@ -48,6 +48,7 @@ function watchSelection(view, cx, onRef) {
 // 日本語版: ホームフォルダ自体のリポジトリ（dotfiles 管理など）。未追跡が膨大で git が数十秒かかるので、変更を調べない。
 const isHome = (path) => /^(\/Users\/[^/]+|\/home\/[^/]+|\/root)\/?$/.test(path ?? "");
 // 日本語版: 一覧と中身の境目をドラッグで動かす。幅はこのコピーの種類ごとに覚える。
+const GUTTER = 64; // 行番号 36 + 間 8 + 記号 12 + 間 8
 function splitter(view, storeKey, fallback, t) {
   if (view.splitW === undefined) { let w = null; try { w = Number(localStorage.getItem(storeKey)); } catch {} view.splitW = w > 0 ? w : fallback; }
   const handle = h_flex().id("split-handle").w(7).h_full().flex_none().justify_center().cursor_col_resize()
@@ -188,7 +189,7 @@ function diffRows(lines) {
 
 export default class Changes extends View {
   init(_props, cx) {
-    this.files = []; this.rows = []; this.diffWidth = 0; this.message = ""; this.handle = cx.focus_handle();
+    this.files = []; this.rows = []; this.diffWidth = 0; this.dx = 0; this.message = ""; this.handle = cx.focus_handle();
     this.diffScroll = VirtualListScrollHandle.new(); this.selKey = selectionKey();
     this.input = InputState.new({ placeholder: "コミットメッセージ" });
     this.input.on("change", (_e, cx) => {
@@ -307,11 +308,15 @@ export default class Changes extends View {
     // 日本語版: 全角文字は半角2文字分で数える（文字数だけだと日本語の行が右で切れて横スクロールできなかった）。
     let cols = 0;
     for (const row of this.rows) { let c = 0; for (const ch of row.text) c += /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1faff}\u{20000}-\u{3fffd}]/u.test(ch) ? 2 : 1; if (c > cols) cols = c; }
-    this.diffWidth = Math.max(300, (cols + 2) * 7.5 + 90);
+    this.diffWidth = Math.max(240, (cols + 2) * 7.5 + 24);
   }
 
+  // 日本語版: 横スクロール量（コード部分だけ）。行番号の列は GUTTER px で固定。
+  maxDx() { return Math.max(0, Math.round(this.diffWidth - ((this.diffViewW ?? 600) - GUTTER))); }
+  clampDx() { this.dx = Math.min(this.maxDx(), Math.max(0, Math.round(this.dx || 0))); }
+
   pick(path, cx) {
-    this.hl = null;
+    this.hl = null; this.dx = 0;
     this.open = this.open === path ? null : path; this.setLines([]); this.note = null;
     this.closed = !this.open;
     const context = this.context;
@@ -376,12 +381,14 @@ export default class Changes extends View {
     const { kind, number, text } = row;
     if (kind === "@") return div().w_full().px(12).h(20).flex_none().truncate().bg(t.raised).text_color(t.dim).child(text);
     const hl = this.hl && this.hl.path === this.open && kind !== "-" && number >= this.hl.from && number <= this.hl.to;
+    // 日本語版: 行番号と +/− は左に固定し、コードだけを this.dx だけ左へずらして横スクロールする。
+    const code = row.tokens ? h_flex().flex_none().children(row.tokens.map((tk) => div().flex_none().whitespace_nowrap().text_color(syntaxColor(tk.k === "punct" ? "operator" : tk.k, t)).child(tk.s)))
+      : div().flex_none().whitespace_nowrap().child(text);
     return h_flex().w_full().h(20).flex_none().gap(8).when(kind === "+", (e) => e.bg(t.ansi2 + "26")).when(kind === "-", (e) => e.bg(t.ansi1 + "26"))
       .when(hl, (e) => e.bg(t.accent + "33").border_l(3).border_color(t.accent))
       .child(div().w(36).flex_none().text_right().text_color(t.dim).child(number === undefined ? "" : String(number)))
       .child(div().w(12).flex_none().text_color(kind === "+" ? t.ansi2 : kind === "-" ? t.ansi1 : t.dim).child(kind === "+" ? "+" : kind === "-" ? "−" : ""))
-      .child(row.tokens ? h_flex().flex_1().min_w(0).overflow_hidden().children(row.tokens.map((tk) => div().flex_none().whitespace_nowrap().text_color(syntaxColor(tk.k === "punct" ? "operator" : tk.k, t)).child(tk.s)))
-        : div().flex_1().min_w(0).truncate().child(text));
+      .child(div().flex_1().min_w(0).h_full().overflow_hidden().relative().child(h_flex().absolute().top(0).h_full().left(-this.dx).child(code)));
   }
 
   // 日本語版: ターミナルで選んだファイル参照へ移動する。変更一覧にない・差分に出ていない行はファイル表示に回す。
@@ -391,7 +398,7 @@ export default class Changes extends View {
     const file = hits.find((f) => f.path === ref.path) ?? hits.sort((a, b) => a.path.length - b.path.length)[0];
     if (!file) return this.handOff(ref);
     if (this.open !== file.path || !this.rows.length) {
-      this.open = file.path; this.closed = false; this.note = null; this.setLines([]); cx.notify();
+      this.open = file.path; this.closed = false; this.note = null; this.dx = 0; this.setLines([]); cx.notify();
       try { await this.load(file.path, context); } catch { return; }
       if (key() !== context || this.open !== file.path) return;
     }
@@ -429,10 +436,30 @@ export default class Changes extends View {
       .child(Scrollbar.vertical("changes-list").absolute().inset_0());
     const limited = div().px(12).py(4).text_size(11).text_color(t.dim).child("変更ファイルは先頭 1,000 件のみ表示しています");
     const diff = div().flex_1().min_h(0).min_w(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(modal ? 12 : 11)
-      .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
-        .child(div().w_full().min_w(this.diffWidth).h_full().child(v_virtual_list("changes-diff", this.rows.length, 20, (i) => String(i),
-          (range) => this.rows.slice(range.start, range.end).map((row) => this.diffRow(row, t))).track_scroll(this.diffScroll).size_full())))
+      .id("changes-diff-x").on_size_change((size, cx) => { this.diffViewW = size.width; this.clampDx(); cx.notify(); })
+      .on_scroll_wheel((e, cx) => {
+        let d = e.delta.x;
+        if (!d && e.modifiers?.shift) d = e.delta.y;
+        if (!d || Math.abs(d) < Math.abs(e.delta.y) && !e.modifiers?.shift) return;
+        const before = this.dx; this.dx -= d; this.clampDx();
+        if (this.dx !== before) cx.notify();
+      })
+      .on_mouse_move((e, cx) => {
+        if (!this.hdrag) return;
+        const track = Math.max(1, (this.diffViewW ?? 600) - GUTTER);
+        this.dx = this.hdrag.dx + (e.position.x - this.hdrag.x) * (this.diffWidth / track); this.clampDx(); cx.notify();
+      })
+      .on_mouse_up("left", (_e, cx) => { if (this.hdrag) { this.hdrag = null; cx.notify(); } })
+      .child(v_virtual_list("changes-diff", this.rows.length, 20, (i) => String(i),
+          (range) => this.rows.slice(range.start, range.end).map((row) => this.diffRow(row, t))).track_scroll(this.diffScroll).size_full())
       .child(Scrollbar.vertical("changes-diff").viewport_from_layout().absolute().inset_0())
+      .when(this.maxDx() > 0, (e) => {
+        const track = Math.max(1, (this.diffViewW ?? 600) - GUTTER - 12), view = (this.diffViewW ?? 600) - GUTTER;
+        const thumb = Math.max(24, track * view / this.diffWidth), left = (track - thumb) * this.dx / this.maxDx();
+        return e.child(div().absolute().bottom(2).left(GUTTER).right(12).h(6)
+          .child(div().id("changes-hbar").absolute().top(0).h(6).left(left).w(thumb).rounded(3).bg(t.dim + (this.hdrag ? "cc" : "66"))
+            .on_mouse_down("left", (ev, cx) => { cx.stop_propagation(); this.hdrag = { x: ev.position.x, dx: this.dx }; cx.notify(); })));
+      })
       .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("ファイルを選ぶと変更内容を表示します")));
     const sp = splitter(this, "changes-split", 440, t);
     const body = modal

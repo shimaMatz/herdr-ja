@@ -21,7 +21,7 @@ Left to right:
     - **`panel`**: the original right panel (368px, `files` and `changes` stacked). It is used when no worktree view is open.
   - The status bar (`ja-workspace-status`).
 
-The changes view groups files under folder headings. Each heading has a folder icon and the dim directory. File names are indented beneath it, with 新 / 削 / 競 / 変 status and `+add −del`. The diff is syntax-colored, shows line numbers, and scrolls horizontally. Width is computed with full-width characters counting as 2 columns.
+The changes view groups files under folder headings. Each heading has a folder icon and the dim directory. File names are indented beneath it, with 新 / 削 / 競 / 変 status and `+add −del`. The diff is syntax-colored and scrolls horizontally while the line-number and +/− columns (64px) stay pinned on the left. Width is computed with full-width characters counting as 2 columns.
 
 The files view has a search bar above the tree. A ファイル名 / 内容 toggle switches between filename and content search, and Aa / ab / .* toggle case, whole word and regex. The tree shows `+add −del` per file versus HEAD.
 
@@ -56,5 +56,6 @@ The files view has a search bar above the tree. A ファイル名 / 内容 toggl
 - Mods are not re-rendered when a terminal selection changes, so the 0.4s timer is required. `focused()` covers only the focused terminal, so scan `terminals()`.
 - Setting two selections in the same frame does not center the editor. Await a short sleep between them.
 - Counting characters underestimates the width of CJK lines; count full-width characters as 2.
+- `overflow_x_scroll` would move the line numbers too. Horizontal scroll is done by hand instead: `on_scroll_wheel` (horizontal delta, or Shift + vertical) changes `dx`. Each row's code sits in an `overflow_hidden` box at `left(-dx)`. A thin custom thumb at the bottom can be dragged. `on_size_change` on the diff element gives the viewport width. `dx` resets when another file opens.
 - Install ripgrep (`brew install ripgrep`). Without it, ファイル名 search falls back to git, and 内容 search does not work.
 - Built against Herdr 0.1.16. Shipped mods change between versions; if a mod fails `herdr-app check`, rebuild that piece from this recipe.
