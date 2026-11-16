@@ -6,7 +6,17 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, machines, panes, focused, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { spaces, machines, panes, focused, run, openOverlay, exec as rawExec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+
+// git を同時にいくつも起こすと、配下にリポジトリが多いフォルダ（数十個）で
+// アプリのファイル上限（GUI 起動だと 256）を超え "Too many open files" になる。
+// このファイルの exec はすべてここを通し、同時に動くのを EXEC_LIMIT 個までにする。
+const EXEC_LIMIT = 8;
+let execRunning = 0;
+const execWaiting = [];
+const exec = (...args) => new Promise((ok) => { if (execRunning < EXEC_LIMIT) { execRunning++; ok(); } else execWaiting.push(ok); })
+  .then(() => rawExec(...args))
+  .finally(() => { const next = execWaiting.shift(); if (next) next(); else execRunning--; });
 
 function find(node, id) {
   if (node?.id === id) return node;
