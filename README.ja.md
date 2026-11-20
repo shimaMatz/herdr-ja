@@ -59,6 +59,25 @@ Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/shi
 
 元のレイアウトには `ctrl-shift-l` で戻せます。
 
+## アップデート
+
+コーディングエージェントに次のように頼んでください。
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then update the herdr-ja layout from https://github.com/shimaMatz/herdr-ja
+```
+
+手でやる場合は、次のコマンドを実行します。インストール済みのファイルを上書きするので、`layouts/ja.json` や `mods/ja-*` を自分で編集している場合は、先に控えておいてください。
+
+```sh
+cd ~/Develop/herdr-ja && git pull   # 初回は git clone https://github.com/shimaMatz/herdr-ja.git ~/Develop/herdr-ja
+cp layouts/ja.json ~/.config/herdr-app/layouts/
+cp -R mods/ja-* ~/.config/herdr-app/mods/
+cd ~/.config/herdr-app && for m in mods/ja-*; do herdr-app check $m; done
+```
+
+mod はその場で再読み込みされるので、アプリの再起動はいりません。リポジトリの `keys.json` が変わっていたら、`"layout:ja"` の部分を `~/.config/herdr-app/keys.json` に手で反映してください。
+
 ## 使い方
 
 - **worktree を開く**：スペースの下にある worktree の行を押します。ファイル表示がメインになり、ターミナルは右に移ります。スペースの行を押しても、そのスペースで同じ表示になります。右上のファイル / 変更ボタンで表示を切り替えられます。選択中のボタンをもう一度押すと、表示を閉じます。

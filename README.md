@@ -39,6 +39,25 @@ Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/shi
 
 The agent copies `layouts/ja.json` and `mods/ja-*` into `~/.config/herdr-app/`, merges `keys.json`, checks each mod, and switches to the `ja` layout. `ctrl-shift-l` switches back to your previous layout.
 
+## Update
+
+Ask your coding agent:
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then update the herdr-ja layout from https://github.com/shimaMatz/herdr-ja
+```
+
+Or do it by hand. Copying over the installed files replaces any local edits to `layouts/ja.json` and `mods/ja-*`, so save those first.
+
+```sh
+cd ~/Develop/herdr-ja && git pull   # first time: git clone https://github.com/shimaMatz/herdr-ja.git ~/Develop/herdr-ja
+cp layouts/ja.json ~/.config/herdr-app/layouts/
+cp -R mods/ja-* ~/.config/herdr-app/mods/
+cd ~/.config/herdr-app && for m in mods/ja-*; do herdr-app check $m; done
+```
+
+Mods reload live, so there is no need to restart the app. If `keys.json` in the repo changed, merge its `"layout:ja"` section into `~/.config/herdr-app/keys.json` by hand.
+
 ## Usage
 
 - **Open a worktree:** click its row under the space. Files become the main view and the terminal moves to the right. Clicking a space row opens the same view for that space. Use the ファイル / 変更 buttons at the top right to switch views; pressing the active one closes the view.
