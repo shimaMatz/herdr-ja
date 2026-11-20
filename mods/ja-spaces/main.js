@@ -71,6 +71,13 @@ export function tone(t, status) {
   return t[status] ?? t.unknown;
 }
 
+// 日本語版: スペース/ワークツリーを開いたら、ファイル/変更を左（メイン側）に出してチャットを右端へ寄せる。
+function showWide() {
+  run("layout.hide", { id: "panel" });
+  run("layout.select", { stack: "wt-panel-body", child: "wt-files" });
+  run("layout.show", { id: "wt-panel" });
+}
+
 export default class Spaces extends View {
   init(_props, cx) {
     this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
@@ -371,10 +378,7 @@ export default class Spaces extends View {
   // Go to a checkout: the space's tab already working in it, else a new tab there.
   // あわせて右の「ファイル」の欄を出す。欄はフォーカス中のターミナルのフォルダ（この worktree）を見せる。
   openTree(w, c, list) {
-    // 日本語版: ワークツリーを押したときだけ、ファイル/変更をメインにしてチャットを右端へ寄せる。
-    run("layout.hide", { id: "panel" });
-    run("layout.select", { stack: "wt-panel-body", child: "wt-files" });
-    run("layout.show", { id: "wt-panel" });
+    showWide();
     const ps = panes();
     const mine = (tab) => ps.some((p) => p.tab === tab.id && p.cwd && ownerOf(list, p.cwd)?.path === c.path);
     const tabs = w.tabs ?? [];
@@ -569,7 +573,7 @@ export default class Spaces extends View {
         if (from !== null && over === w.id && from !== w.id) {
           const index = spaces().findIndex(s => s.id === w.id);
           if (index !== -1) run("space.move", { id: from, index: index + 1 });
-        } else if (from === w.id) { run("layout.hide", { id: "wt-panel" }); run("space.select", { id: w.id }); }
+        } else if (from === w.id) { showWide(); run("space.select", { id: w.id }); }
         cx.notify();
       })
       .on_mouse_down("right", () => this.menu(w))
@@ -595,7 +599,7 @@ export default class Spaces extends View {
       .items_center()
       .when(w.active, (el) => el.bg(t.selected))
       .when(!w.active, (el) => el.hover((s) => s.bg(t.hover)))
-      .on_click(() => { run("layout.hide", { id: "wt-panel" }); run("space.select", { id: w.id }); })
+      .on_click(() => { showWide(); run("space.select", { id: w.id }); })
       .child(div().text_color(w.active ? t.foreground : t.muted).child(String(i + 1)))
       .child(div().absolute().right(5).text_color(tone(t, w.status)).child(glyph(w.status))));
   }

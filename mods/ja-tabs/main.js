@@ -134,9 +134,10 @@ export default class Tabs extends View {
     const panel = find(root, "panel"), body = find(root, "panel-body");
     // 日本語版: ファイル・変更パネルのボタンは常に表示する。
     const enabled = ["files", "changes"];
-    this.syncPanel(space, panel, body, enabled);
     // 日本語版: ワークツリー表示中（wt-panel が開いている）は、ボタンはそちらを切り替える。
     const wt = find(root, "wt-panel"), wtBody = find(root, "wt-panel-body"), wtOpen = Boolean(wt && !wt.hidden);
+    // 日本語版: 左のファイル/変更を出している間は、右パネルのスペースごとの復元をしない。
+    if (wtOpen) this.space = space?.id; else this.syncPanel(space, panel, body, enabled);
     const panelButton = (id, label, icon) => {
       const on = wtOpen ? wtBody?.active === `wt-${id}` : panel && !panel.hidden && body?.active === id;
       return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)

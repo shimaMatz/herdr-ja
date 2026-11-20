@@ -41,19 +41,23 @@ The agent copies `layouts/ja.json` and `mods/ja-*` into `~/.config/herdr-app/`, 
 
 ## Usage
 
-- **Open a worktree:** click its row under the space. Files become the main view and the terminal moves to the right. Use the ファイル / 変更 buttons at the top right to switch views. Click the space row to go back to the normal view.
+- **Open a worktree:** click its row under the space. Files become the main view and the terminal moves to the right. Clicking a space row opens the same view for that space. Use the ファイル / 変更 buttons at the top right to switch views; pressing the active one closes the view.
 - **Jump to code:** select `src/todo.ts:13-17` (or `path:line`, or just a path) in any terminal, for example in an agent's reply, by double-click or drag.
   - If the changes view is open and the file has changes, the diff scrolls there and highlights the lines.
   - Otherwise the files view opens the file at that line.
 - **Scroll a long diff line:** swipe sideways on the trackpad, Shift + mouse wheel, or drag the thin bar under the diff.
 - **Search files:** type in the bar above the file tree. Switch between ファイル名 and 内容, and toggle Aa / ab / .*.
+- **Read files:** code is syntax-colored. Markdown renders as a preview with its images; switch to 選択 to select and copy text.
+- **Fold changes:** click a folder heading in the changes list to fold it. A folded heading shows its file count and `+add −del`.
+- **Right-click a file or folder:** copy its relative or absolute path. In the file tree you can also create a file or folder, rename, or delete (on the local Mac, delete moves to the Trash).
 
 ## Privacy
 
 - `ja-spaces`, `ja-changes`, `ja-files`, `ja-menu` and `ja-worktree` run `git` (status, diff numstat, ls-files, worktree) in the focused space's folder. `ja-changes` and `ja-files` count lines of new files with `wc`.
 - `ja-files` runs `rg` in the focused folder when you search.
 - `ja-spaces`, `ja-picker` and `ja-machine-add` call `hc` (herdr-core) to list machines.
-- `ja-changes` and `ja-files` check every terminal's selection every 0.4 seconds. When a new selection appears, they read the clipboard once to parse a `path:line`. They never write to the clipboard.
+- `ja-changes` and `ja-files` check every terminal's selection every 0.4 seconds. When a new selection appears, they read the clipboard once to parse a `path:line`. They write to the clipboard only when you choose a copy-path menu item.
+- `ja-files` creates, renames and deletes files only from its right-click menu, after you confirm. To show images in a preview it copies them into `~/.config/herdr-app/data/ja-files/preview/` and removes copies older than a day.
 
 Nothing reaches the network.
 

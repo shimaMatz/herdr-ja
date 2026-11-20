@@ -1,7 +1,7 @@
 // A text prompt. Enter saves, Esc cancels.
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { run, props, closeOverlay, theme } from "herdr";
+import { run, props, closeOverlay, theme, setShared } from "herdr";
 
 export default class Prompt extends View {
   init(_props, cx) {
@@ -21,7 +21,9 @@ export default class Prompt extends View {
   submit() {
     const p = props();
     closeOverlay(p.overlay);
-    run(p.command.name, { ...(p.command.args ?? {}), name: this.text });
+    // 日本語版: command.shared のときは、コマンドの代わりに共有の値で依頼を渡す（ja-files のファイル操作）。
+    if (p.command.shared) setShared(p.command.shared, { ...(p.command.args ?? {}), name: this.text, at: Date.now() });
+    else run(p.command.name, { ...(p.command.args ?? {}), name: this.text });
   }
 
   key(e, cx) {
@@ -40,11 +42,11 @@ export default class Prompt extends View {
       .w_full().min_h(0).p(18).bg(t.popover).text_color(t.foreground)
       .child(h_flex().items_center().child(div().flex_1().text_size(15).font_semibold().child((p.title ?? "").replace(/^./, (c) => c.toUpperCase())))
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
-      .child(label("名前"))
+      .child(label(p.label ?? "名前"))
       .child(Input.new(this.input).h(36).px(10).rounded(9).border_1().border_color(this.inputFocused ? t.accent : t.input).bg(t.background).text_size(12.8).text_color(t.foreground))
       .when(Boolean(p.hint), el => el.child(div().pt(6).text_size(11.5).text_color(t.dim).child(p.hint)))
       .child(h_flex().pt(20).gap(8).justify_end()
         .child(button("pm-cancel", "キャンセル", false, () => closeOverlay(p.overlay)))
-        .child(button("pm-save", "保存", true, () => this.submit())));
+        .child(button("pm-save", p.ok ?? "保存", true, () => this.submit())));
   }
 }

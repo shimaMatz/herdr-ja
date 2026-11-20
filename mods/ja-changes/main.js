@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, props, closeOverlay, layout, shared, setShared, run, terminals } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, props, closeOverlay, layout, shared, setShared, run, terminals, openOverlay } from "herdr";
 
 // 日本語版: このコピーが今見えているか。隠れているパネルは git を走らせない（ホームのような巨大なリポジトリで数十秒かかり、次の読み込みを止めていた）。
 function findNode(n, id) { if (!n) return null; if (n.id === id) return n; for (const c of n.children ?? []) { const r = findNode(c, id); if (r) return r; } return null; }
@@ -357,18 +357,39 @@ export default class Changes extends View {
   }
 
   listHeight() {
-    return this.groups().reduce((n, [dir, fs]) => n + (dir ? 24 : 0) + fs.length * 26, 0);
+    const closed = this.collapsed ?? new Set();
+    return this.groups().reduce((n, [dir, fs]) => n + (dir ? 24 : 0) + (dir && closed.has(dir) ? 0 : fs.length * 26), 0);
+  }
+
+  // 日本語版: 右クリックで相対パス（リポジトリのルートから）・絶対パスをコピーする。
+  pathMenu(rel) {
+    if (this.root) openOverlay({ mod: "ja-menu", kind: "popup", width: 200, height: 90, props: { tab: "path", target: { rel, abs: `${this.root}/${rel}` } } });
+  }
+
+  // 日本語版: フォルダ見出しを押すと、その中のファイルを畳む／開く。
+  toggleDir(dir, cx) {
+    this.collapsed ??= new Set();
+    if (this.collapsed.has(dir)) this.collapsed.delete(dir); else this.collapsed.add(dir);
+    cx.notify();
   }
 
   listRows(t) {
-    const out = [];
+    const out = [], closed = this.collapsed ?? new Set();
     for (const [dir, fs] of this.groups()) {
-      if (dir) out.push(h_flex().id(`changes-dir-${dir}`).h(24).flex_none().px(8).gap(6).items_center().tooltip(dir)
+      const shut = Boolean(dir) && closed.has(dir);
+      const add = fs.reduce((n, f) => n + (f.add || 0), 0), del = fs.reduce((n, f) => n + (f.del || 0), 0);
+      if (dir) out.push(h_flex().id(`changes-dir-${dir}`).h(24).flex_none().px(8).gap(6).items_center().rounded(6).cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(dir)
+        .on_click((_e, cx) => this.toggleDir(dir, cx)).on_mouse_down("right", () => this.pathMenu(dir))
+        .child(svg(`mods/ja-files/chevron-${shut ? "right" : "down"}.svg`).size(11).flex_none().text_color(t.dim))
         .child(svg("mods/ja-files/folder.svg").size(13).flex_none().text_color(t.dim))
-        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(dir)));
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(dir))
+        .when(shut, (e) => e.child(div().flex_none().px(5).rounded(8).bg(t.raised).text_size(10).text_color(t.muted).child(String(fs.length)))
+          .when(add > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi2).child(`+${add}`)))
+          .when(del > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi1).child(`−${del}`)))));
+      if (shut) continue;
       for (const f of fs) {
         const name = f.path.split("/").pop();
-        out.push(h_flex().id(`change-${f.path}`).h(26).flex_none().pl(dir ? 26 : 8).pr(8).gap(8).items_center().rounded(7).cursor_pointer().when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx)).tooltip(f.path)
+        out.push(h_flex().id(`change-${f.path}`).h(26).flex_none().pl(dir ? 31 : 8).pr(8).gap(8).items_center().rounded(7).cursor_pointer().when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx)).on_mouse_down("right", () => this.pathMenu(f.path)).tooltip(f.path)
           .child(div().w(14).flex_none().text_size(11).text_color(f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked).child({ A: "新", D: "削", U: "競", M: "変" }[f.status] ?? f.status))
           .child(div().flex_1().min_w(0).truncate().child(name))
           .when(f.add > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi2).child(`+${f.add}`))).when(f.del > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi1).child(`−${f.del}`))));
