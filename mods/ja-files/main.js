@@ -1,10 +1,11 @@
-// A lazy file browser for the focused pane's folder, with bounded read-only previews.
+// A lazy file browser for the focused pane's folder, with bounded previews.
+// 日本語版: このマシンのファイルはその場で編集できる（cmd-s か「保存」で保存。別のファイルを開くときは自動で保存）。
 import { View, div, svg, image } from "gpui-kit";
 import { exists, mkdir, writeFile } from "fs/promises";
 import { Buffer } from "buffer";
-import { v_flex, h_flex, Editor, EditorState, InputState, Input, TextView, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
-import { tokenize, tokenizeLines, langOf, syntaxColor, untab, widthOf, splitHits, matchRanges } from "./highlight.js";
-import { spaces, panes, focused, exec, readTextFile, home, openOverlay, notify, watchFolder, theme, settings, window, props, closeOverlay, layout, shared, terminals } from "herdr";
+import { v_flex, h_flex, Editor, EditorState, InputState, Input, TextView } from "gpui-base";
+import { tokenize, langOf, syntaxColor, untab, splitHits, matchRanges } from "./highlight.js";
+import { spaces, panes, focused, exec, readTextFile, writeTextFile, home, openOverlay, notify, watchFolder, theme, settings, window, props, closeOverlay, layout, shared, terminals } from "herdr";
 
 // 日本語版: このコピーが今見えているか。隠れているパネルは git を走らせない（ホームのような巨大なリポジトリで数十秒かかり、次の読み込みを止めていた）。
 function findNode(n, id) { if (!n) return null; if (n.id === id) return n; for (const c of n.children ?? []) { const r = findNode(c, id); if (r) return r; } return null; }
@@ -209,7 +210,7 @@ async function directory(path, on) {
 export default class Files extends View {
   init(_props, cx) {
     this.uid = `${Date.now()}-${Math.random()}`; this.opSeen = shared("ja-fileop")?.at ?? 0;
-    this.saved = new Map(); this.imgs = new Map(); this.hitClosed = new Set(); this.dx = 0; this.codeScroll = VirtualListScrollHandle.new();
+    this.saved = new Map(); this.imgs = new Map(); this.hitClosed = new Set();
     // 日本語版: 写したプレビュー画像のうち、1 日より古いものを片付ける（ほかのパネルが表示中のものは消さない）。
     exec("find", [`${home()}/.config/herdr-app/data/ja-files/preview`, "-type", "f", "-mtime", "+1", "-delete"]).catch(() => {});
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {}; this.stats = {};
@@ -432,14 +433,17 @@ export default class Files extends View {
   }
 
   show(path, cx, target) {
+    // 日本語版: 未保存の変更は、ほかのファイルを開く前に保存する（同じファイルを開き直すときも）。
+    const saving = this.writeOut();
     this.code?.release(); this.code = null; this.file = path; this.fileError = null; this.target = target ?? null;
-    this.md = null; this.img = null; this.lines = null; this.text = null; this.dx = 0;
+    this.md = null; this.img = null; this.text = null; this.orig = null; this.dirty = false; this.editable = false;
     if (!path || !cx) return;
     const context = this.context, root = this.root, on = this.on;
     this.imgs = new Map();
     if (IMG.has(extOf(path))) { this.img = { path }; return; }
     cx.spawn(async cx => {
       try {
+        await saving;
         const text = await readTextFile(`${root}/${path}`, { on });
         if (this.file !== path || !this.current(context)) return;
         if (text === null) { this.fileError = "このファイルはもうありません"; return; }
@@ -448,30 +452,58 @@ export default class Files extends View {
           const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
           this.md = { path, dir, blocks: mdBlocks(text.length > 400000 ? text.slice(0, 400000) : text, dir) };
         }
-        // 日本語版: 色付きのコード表示（自前の簡易ハイライト）。文字を選択したいときだけ Editor に切り替える。
-        this.text = text.length > 400000 ? text.slice(0, 400000) + "\n…（以下省略）" : text;
-        const lines = this.text.replace(/\n$/, "").split("\n").map(untab);
-        const toks = lines.length <= 30000 ? tokenizeLines(lines, path) : lines.map((s) => [{ k: "", s }]);
-        let cols = 0; for (const l of lines) { if (l.length > cols / 2) cols = Math.max(cols, widthOf(l)); }
-        this.lines = { path, text: lines, toks, width: Math.max(240, (cols + 2) * 7.3 + 24) };
-        if (this.viewMode === "select") this.makeEditor(path);
-        if (target) { cx.notify(); await this.reveal(text, target, cx); }
+        // 日本語版: コードはエディタで表示する（色付き・選択してコピーできる）。省略したファイルと別マシンのファイルは読むだけ。
+        const cut = text.length > 400000;
+        this.text = cut ? text.slice(0, 400000) + "\n…（以下省略）" : text;
+        this.orig = text; this.editable = !cut && !on;
+        this.makeEditor(path, !this.editable);
+        if (target) { cx.notify(); await this.reveal(this.text, target, cx); }
       } catch { if (this.file === path && this.current(context)) this.fileError = "このファイルはプレビューできません（バイナリ・大きすぎる・読めない）"; }
       finally { cx.notify(); }
     });
   }
 
-  makeEditor(path) {
-    if (this.code || !this.text) return;
+  makeEditor(path, readonly) {
+    if (this.code || this.text === null) return;
     const t = theme(), pal = palette(t);
-    this.code = EditorState.new({ language: langFor(path), readonly: true, value: this.text,
+    const code = EditorState.new({ language: langFor(path), readonly, value: this.text,
       font_family: settings().font_family, font_size: 12,
       syntax: Object.fromEntries(Object.entries(pal).filter(([k]) => k !== "text")) });
+    code.on("change", (_e, cx) => {
+      if (this.code !== code) return;
+      const dirty = this.editable && code.value() !== this.orig;
+      if (dirty !== this.dirty) { this.dirty = dirty; cx.notify(); }
+    });
+    this.code = code;
+  }
+
+  // 日本語版: 編集中の内容を書き込む。読んだときから外で書き換わっていたら、上書きせずに知らせる。
+  writeOut() {
+    const code = this.code, file = this.file, root = this.root;
+    if (!code || !file || !this.dirty || !this.editable) return Promise.resolve(true);
+    const text = code.value(), orig = this.orig;
+    return writeTextFile(`${root}/${file}`, text, orig).then(() => {
+      if (this.code === code) {
+        this.orig = text; this.dirty = code.value() !== text;
+        if (this.md?.path === file) this.md = { ...this.md, blocks: mdBlocks(text, this.md.dir) };
+      }
+      return true;
+    }, (e) => {
+      notify({ title: "保存できませんでした", body: `${file}: ${/stale|match|changed/i.test(String(e)) ? "ほかで書き換えられています。開き直してから編集してください" : String(e?.message ?? e)}`, level: "error", timeout: 8000 });
+      return false;
+    });
+  }
+
+  save(cx) {
+    if (!this.dirty || this.saving) return;
+    this.saving = true; cx.notify();
+    cx.spawn(async (cx) => {
+      try { await this.writeOut(); } finally { this.saving = false; cx.notify(); }
+    });
   }
 
   // 行（と一致した文字列）を選択して、そこまでスクロールさせる。
   async reveal(text, target, cx) {
-    if (!this.code) { this.codeScroll.scroll_to_item(Math.max(0, target.from - 6), "top"); cx.notify(); return; }
     const r = lineRange(text, target.from, target.to);
     if (!r || !this.code) return;
     let { start, end } = r;
@@ -550,35 +582,6 @@ export default class Files extends View {
   paint(tokens, t, ranges) {
     return splitHits(tokens, ranges).map((tk) => div().flex_none().whitespace_nowrap().text_color(syntaxColor(tk.k === "punct" ? "operator" : tk.k, t))
       .when(Boolean(tk.hit), (e) => e.rounded(2).bg(t.ansi3 + "55")).child(tk.s));
-  }
-
-  maxDx() { return Math.max(0, Math.round((this.lines?.width ?? 0) - ((this.codeViewW ?? 600) - 52))); }
-  clampDx() { this.dx = Math.min(this.maxDx(), Math.max(0, Math.round(this.dx || 0))); }
-
-  codeRow(i, t) {
-    const L = this.lines, n = i + 1, tg = this.target;
-    const hl = tg && n >= tg.from && n <= tg.to;
-    const ranges = hl && tg.re ? matchRanges(L.text[i], tg.re) : null;
-    return h_flex().w_full().h(20).flex_none().gap(10).when(hl, (e) => e.bg(t.accent + "26"))
-      .child(div().w(42).flex_none().text_right().text_color(hl ? t.foreground : t.dim).child(String(n)))
-      .child(div().flex_1().min_w(0).h_full().overflow_hidden().relative()
-        .child(h_flex().absolute().top(0).h_full().items_center().left(-this.dx).children(this.paint(L.toks[i], t, ranges))));
-  }
-
-  codeView(t) {
-    const L = this.lines;
-    return div().flex_1().min_h(0).min_w(0).relative().pt(6).font_family(settings().font_family ?? "JetBrains Mono").text_size(12)
-      .id("files-code-x").on_size_change((size, cx) => { this.codeViewW = size.width; this.clampDx(); cx.notify(); })
-      .on_scroll_wheel((e, cx) => {
-        let d = e.delta.x;
-        if (!d && e.modifiers?.shift) d = e.delta.y;
-        if (!d || Math.abs(d) < Math.abs(e.delta.y) && !e.modifiers?.shift) return;
-        const before = this.dx; this.dx -= d; this.clampDx();
-        if (this.dx !== before) cx.notify();
-      })
-      .child(v_virtual_list(`files-code-${L.path}`, L.text.length, 20, (i) => String(i),
-        (range) => { const out = []; for (let i = range.start; i < range.end; i++) out.push(this.codeRow(i, t)); return out; }).track_scroll(this.codeScroll).size_full())
-      .child(Scrollbar.vertical(`files-code-${L.path}`).viewport_from_layout().absolute().inset_0());
   }
 
   rows(prefix, depth, out, t) {
@@ -698,23 +701,23 @@ export default class Files extends View {
     const tree = searching ? v_flex().id("files-found").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.resultRows(t)) : v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).on_mouse_down("right", () => { if (this.root) pathMenu("", this.root, true, this.ops()); }).children(this.rows("", 0, [], t))
       .when(!searching && (Boolean(this.error) || !this.entries.get("")?.length), el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "ファイルを読み込み中…" : this.root ? "ファイルがありません" : "フォルダがありません"))))
       .when(!searching && this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("表示はフォルダごとに 500 件、合計 5,000 件までです")));
-    // 日本語版: 表示の切り替え。マークダウンは「プレビュー」、ほかは色付きの「コード」が既定。「選択」は文字を選んでコピーできる表示。
-    const select = this.viewMode === "select", rendered = Boolean(this.md) && this.mdView !== "source" && !this.target && !select;
+    // 日本語版: 表示の切り替え。マークダウンは「プレビュー」、ほかは「コード」（編集できるエディタ）。どちらも文字を選んで cmd-c でコピーできる。
+    const rendered = Boolean(this.md) && this.mdView !== "source" && !this.target;
     const preview = () => this.img ? v_flex().id(`img-${this.img.path}`).flex_1().min_h(0).min_w(0).overflow_y_scrollbar().p(16).items_center().child(this.imageView(this.imageFor(this.img.path, cx), null, t, true))
       : rendered ? this.mdPreview(t, cx)
-      : select && this.code ? Editor.new(this.code).flex_1().min_h(0).min_w(0)
-      : this.lines ? this.codeView(t) : div().flex_1().p(12).text_color(t.dim).child(this.fileError || "ファイルを読み込み中…");
-    const modes = [...(this.md ? [["preview", "プレビュー"]] : []), ["source", "コード"], ["select", "選択"]];
-    const current = select ? "select" : rendered ? "preview" : "source";
+      : this.code ? v_flex().id(`files-editor-${this.file}`).flex_1().min_h(0).min_w(0)
+        .on_key_down((e, cx) => { if (e.keystroke === "cmd-s") { cx.stop_propagation(); this.save(cx); } })
+        .child(Editor.new(this.code).flex_1().min_h(0).min_w(0))
+      : div().flex_1().p(12).text_color(t.dim).child(this.fileError || "ファイルを読み込み中…");
+    const modes = this.md ? [["preview", "プレビュー"], ["source", "コード"]] : [];
+    const current = rendered ? "preview" : "source";
     const viewToggle = h_flex().flex_none().gap(2).p(2).rounded(6).bg(t.raised).text_size(11)
       .children(modes.map(([id, label]) => {
         const on = id === current;
         return div().id(`view-mode-${id}`).px(7).py(2).rounded(4).cursor_pointer().bg(on ? t.selected : t.raised).text_color(on ? t.foreground : t.muted).hover(s => s.bg(t.hover))
-          .tooltip(id === "select" ? "文字を選択してコピーできる表示（色は付きません）" : id === "source" ? "色付きのコード" : "整形して表示")
+          .tooltip(id === "source" ? "マークダウンを編集する" : "整形して表示")
           .on_click((_e, cx) => {
-            this.viewMode = id === "select" ? "select" : "color";
-            if (id === "select" && this.lines) this.makeEditor(this.lines.path);
-            if (id !== "select") this.mdView = id;
+            this.mdView = id;
             if (id === "preview") this.target = null;
             cx.notify();
           }).child(label);
@@ -724,7 +727,11 @@ export default class Files extends View {
       .child(div().font_semibold().child("ファイル"))
       .when(modal, el => el.child(div().min_w(0).truncate().text_size(12).text_color(t.dim).child(this.root ?? "")))
       .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ? this.file + (this.target ? `:${this.target.from}${this.target.to > this.target.from ? "-" + this.target.to : ""}` : "") : (modal ? "" : this.root?.split(/[\\/]/).pop() ?? "")))
-      .when(Boolean(this.lines), el => el.child(viewToggle))
+      .when(Boolean(this.code) && !this.editable, el => el.child(div().flex_none().text_size(11).text_color(t.dim).tooltip(this.on ? "別のマシンのファイルは編集できません" : "大きいファイルは途中までしか読まないので編集できません").child("読み取り専用")))
+      .when(this.dirty || Boolean(this.saving), el => el.child(div().id("files-save").flex_none().px(8).py(2).rounded(5).cursor_pointer().text_size(11)
+        .bg(t.accent + "33").border_1().border_color(t.accent).hover(s => s.bg(t.hover)).tooltip("保存 (cmd-s)")
+        .on_click((_e, cx) => this.save(cx)).child(this.saving ? "保存中…" : "● 保存")))
+      .when(modes.length > 0, el => el.child(viewToggle))
       .when(Boolean(overlay), el => el.child(div().id("files-close").ml(6).px(6).py(2).rounded(5).cursor_pointer().text_color(t.muted).hover(s => s.bg(t.hover)).tooltip("閉じる (Esc)").on_click(() => closeOverlay(overlay)).child("×")));
     const sp = splitter(this, "files-split", 380, t);
     return v_flex().id("files").size_full().min_h(0).when(!overlay, el => el.rounded(10).border_1()).overflow_hidden().bg(t.background).border_color(t.border).text_color(t.foreground).text_size(13)

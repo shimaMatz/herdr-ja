@@ -66,7 +66,8 @@ Mods reload live, so there is no need to restart the app. If `keys.json` in the 
   - Otherwise the files view opens the file at that line.
 - **Scroll a long diff line:** swipe sideways on the trackpad, Shift + mouse wheel, or drag the thin bar under the diff.
 - **Search files:** type in the bar above the file tree. Switch between ファイル名 and 内容, and toggle Aa / ab / .*.
-- **Read files:** code is syntax-colored. Markdown renders as a preview with its images; switch to 選択 to select and copy text.
+- **Read and edit files:** code opens in a syntax-colored editor you can type in. Save with `cmd-s` or the header's 「● 保存」 button; opening another file saves unsaved edits first. A file changed elsewhere since you opened it is not overwritten; you get a notice instead. Files on another machine, and files too large to load whole, are read-only.
+- **Copy:** select text in the code view or in the Markdown preview and press `cmd-c`. Markdown renders as a preview with its images; switch to コード to edit it.
 - **Fold changes:** click a folder heading in the changes list to fold it. A folded heading shows its file count and `+add −del`.
 - **Right-click a file or folder:** copy its relative or absolute path. In the file tree you can also create a file or folder, rename, or delete (on the local Mac, delete moves to the Trash).
 
